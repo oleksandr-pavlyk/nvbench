@@ -188,7 +188,7 @@ def format_duration(seconds):
     else:
         multiplier = 1e6
         units = "us"
-    return f"{seconds * multiplier:.3f} {units}"
+    return "%0.3f %s" % (seconds * multiplier, units)
 
 
 def format_percentage(percentage):
@@ -197,7 +197,7 @@ def format_percentage(percentage):
     # allow for inf, so these get turned into null.
     if percentage is None:
         return "inf"
-    return f"{percentage * 100.0:.2f}%"
+    return "%0.2f%%" % (percentage * 100.0)
 
 
 def format_axis_values(axis_values, axes, axis_filters=None):
@@ -291,23 +291,12 @@ def plot_comparison_entries(entries, title=None, dark=False):
     return 0
 
 
-def compare_benches(
+def new_compare_benches(
     ref_benches,
     cmp_benches,
-    threshold,
-    plot_along,
-    plot,
-    dark,
     axis_filters,
     benchmark_filters,
-    no_color,
 ):
-    if plot_along:
-        import matplotlib.pyplot as plt
-        import seaborn as sns
-
-        sns.set_theme()
-
     comparison_entries = []
     comparison_device_names = set()
     for cmp_bench in cmp_benches:
@@ -379,38 +368,14 @@ def compare_benches(
                 cmp_time_summary = lookup_summary(
                     cmp_summaries, "nv/cold/time/gpu/mean"
                 )
-                cmp_min_time_summary = lookup_summary(
-                    cmp_summaries, "nv/cold/time/gpu/min"
-                )
-                cmp_max_time_summary = lookup_summary(
-                    cmp_summaries, "nv/cold/time/gpu/max"
+                ref_time_summary = lookup_summary(
+                    ref_summaries, "nv/cold/time/gpu/mean"
                 )
                 cmp_noise_summary = lookup_summary(
                     cmp_summaries, "nv/cold/time/gpu/stdev/relative"
                 )
-                cmp_average_freq_summary = lookup_summary(
-                    cmp_summaries, "nv/cold/sm_clock_rate/scaling/percent"
-                )
-                cmp_sample_times_summary = lookup_summary(
-                    cmp_summaries, "nv/cold/json-bin:nv/cold/sample_times"
-                )
-                cmp_sample_times_summary = lookup_summary(
-                    cmp_summaries, "nv/cold/json-freqs-bin:nv/cold/sample_freqs"
-                )
-                ref_time_summary = lookup_summary(
-                    ref_summaries, "nv/cold/time/gpu/mean"
-                )
-                ref_min_time_summary = lookup_summary(
-                    ref_summaries, "nv/cold/time/gpu/min"
-                )
-                ref_max_time_summary = lookup_summary(
-                    ref_summaries, "nv/cold/time/gpu/max"
-                )
                 ref_noise_summary = lookup_summary(
                     ref_summaries, "nv/cold/time/gpu/stdev/relative"
-                )
-                ref_average_freq_summary = lookup_summary(
-                    ref_summaries, "nv/cold/sm_clock_rate/scaling/percent"
                 )
 
                 # TODO: Use other timings, too. Maybe multiple rows, with a
@@ -418,15 +383,9 @@ def compare_benches(
                 if not all(
                     [
                         cmp_time_summary,
-                        cmp_min_time_summary,
-                        cmp_max_time_summary,
                         ref_time_summary,
-                        ref_min_time_summary,
-                        ref_max_time_summary,
                         cmp_noise_summary,
                         ref_noise_summary,
-                        cmp_average_freq_summary,
-                        ref_average_freq_summary,
                     ]
                 ):
                     continue
@@ -440,25 +399,13 @@ def compare_benches(
                     return value_data["value"]
 
                 cmp_time = extract_value(cmp_time_summary)
-                cmp_min_time = extract_value(cmp_min_time_summary)
-                cmp_max_time = extract_value(cmp_max_time_summary)
                 ref_time = extract_value(ref_time_summary)
-                ref_min_time = extract_value(ref_min_time_summary)
-                ref_max_time = extract_value(ref_max_time_summary)
                 cmp_noise = extract_value(cmp_noise_summary)
                 ref_noise = extract_value(ref_noise_summary)
-                cmp_average_freq = extract_value(cmp_average_freq_summary)
-                ref_average_freq = extract_value(ref_average_freq_summary)
 
                 # Convert string encoding to expected numerics:
                 cmp_time = float(cmp_time)
-                cmp_min_time = float(cmp_min_time)
-                cmp_max_time = float(cmp_max_time)
-                cmp_average_freq = float(cmp_average_freq)
                 ref_time = float(ref_time)
-                ref_min_time = float(ref_min_time)
-                ref_max_time = float(ref_max_time)
-                ref_average_freq = float(ref_average_freq)
 
                 diff = cmp_time - ref_time
                 frac_diff = diff / ref_time
@@ -466,15 +413,15 @@ def compare_benches(
                 if ref_noise and cmp_noise:
                     ref_noise = float(ref_noise)
                     cmp_noise = float(cmp_noise)
-                    max_noise = max(ref_noise, cmp_noise)
+                    min_noise = min(ref_noise, cmp_noise)
                 elif ref_noise:
                     ref_noise = float(ref_noise)
-                    max_noise = ref_noise
+                    min_noise = ref_noise
                 elif cmp_noise:
                     cmp_noise = float(cmp_noise)
-                    max_noise = cmp_noise
+                    min_noise = cmp_noise
                 else:
-                    max_noise = None  # Noise is inf
+                    min_noise = None  # Noise is inf
 
                 if plot_along:
                     axis_name = []
@@ -502,32 +449,12 @@ def compare_benches(
                 global pass_count
                 global failure_count
 
-                # r_min r_max  c_min c_max
-                is_ref_before_cmp = ref_max_time * ref_average_freq < cmp_min_time * cmp_average_freq
-                # c_min c_max  r_min r_max
-                is_ref_after_cmp = cmp_max_time * cmp_average_freq < ref_min_time * ref_average_freq
-
-                # c_min r_min r_max c_max
-                is_ref_within_cmp = (
-                    (cmp_min_time * cmp_average_freq < ref_min_time * ref_average_freq) and
-                    (ref_max_time * ref_average_freq < cmp_max_time * cmp_average_freq)
-                )
-                # r_min c_min c_max r_max
-                is_cmp_within_ref = (
-                    (cmp_min_time * cmp_average_freq < ref_min_time * ref_average_freq) and
-                    (ref_max_time * ref_average_freq < cmp_max_time * cmp_average_freq)
-                )
-
-                has_partial_overlap = not is_ref_before_cmp and not is_ref_after_cmp and not is_ref_within_cmp and not is_cmp_within_ref
-
-
-
                 config_count += 1
-                if max_noise is None:
+                if not min_noise:
                     unknown_count += 1
                     status_label = "????"
                     status = colorize(status_label, Fore.YELLOW, Emoji.YELLOW, no_color)
-                elif abs(frac_diff) <= max_noise:
+                elif abs(frac_diff) <= min_noise:
                     pass_count += 1
                     status_label = "SAME"
                     status = colorize(status_label, Fore.BLUE, Emoji.BLUE, no_color)
@@ -638,41 +565,13 @@ def compare_benches(
 
 def main():
     help_text = "%(prog)s [reference.json compare.json | reference_dir/ compare_dir/]"
-    parser = argparse.ArgumentParser(prog="nvbench_compare", usage=help_text)
+    parser = argparse.ArgumentParser(prog="nvbench_compare_new", usage=help_text)
     parser.add_argument(
         "--ignore-devices",
         dest="ignore_devices",
         default=False,
         help="Ignore differences in the device sections and compare anyway",
         action="store_true",
-    )
-    parser.add_argument(
-        "--threshold-diff",
-        type=float,
-        dest="threshold",
-        default=0.0,
-        help="only show benchmarks where percentage diff is >= THRESHOLD",
-    )
-    parser.add_argument(
-        "--plot-along", type=str, dest="plot_along", default=None, help="plot results"
-    )
-    parser.add_argument(
-        "--plot",
-        dest="plot",
-        default=False,
-        help="plot comparison summary",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--dark",
-        action="store_true",
-        help="Use dark theme (black background, white text)",
-    )
-    parser.add_argument(
-        "--no-color",
-        dest="no_color",
-        action="store_true",
-        help="Use emoji instead of ANSI color codes (useful for GitHub issues/PRs)",
     )
     parser.add_argument(
         "-a",
@@ -730,9 +629,9 @@ def main():
         all_cmp_devices = cmp_root["devices"]
 
         if ref_root["devices"] != cmp_root["devices"]:
-            warn_fore = Fore.YELLOW if args.ignore_devices else Fore.RED
+            # warn_fore = Fore.YELLOW if args.ignore_devices else Fore.RED
             msg_text = "Device sections do not match"
-            print(colorize(msg_text, warn_fore, Emoji.NONE, args.no_color), end="")
+            print(msg_text, end="")
             print(": ", end="")
 
             print(
@@ -743,23 +642,18 @@ def main():
             if not args.ignore_devices:
                 sys.exit(1)
 
-        compare_benches(
+        new_compare_benches(
             ref_root["benchmarks"],
             cmp_root["benchmarks"],
-            args.threshold,
-            args.plot_along,
-            args.plot,
-            args.dark,
             axis_filters,
             args.benchmark,
-            args.no_color,
         )
 
     print("# Summary\n")
     print("- Total Matches: %d" % config_count)
-    print("  - Pass    (diff <= max_noise): %d" % pass_count)
+    print("  - Pass    (diff <= min_noise): %d" % pass_count)
     print("  - Unknown (infinite noise):    %d" % unknown_count)
-    print("  - Failure (diff > max_noise):  %d" % failure_count)
+    print("  - Failure (diff > min_noise):  %d" % failure_count)
     return failure_count
 
 

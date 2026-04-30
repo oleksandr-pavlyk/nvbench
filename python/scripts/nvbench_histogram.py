@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+from collections.abc import Iterator
+from typing import Any, Optional
 import argparse
 import os
 import sys
@@ -42,52 +44,77 @@ def parse_files():
     return filenames
 
 
+def extract_tagged(tag : str, summary : list) -> Iterator[str]:
+    return filter(lambda v: v["tag"] == tag, summary)
+
+
+def extract_named(name : str, summary : list) -> Iterator[str]:
+    return filter(lambda v: v["name"] == name, summary)
+
+
+def first_val(it : Iterator[str]) -> Any:
+    return next(it)
+
+
+def optional_first_val(it : Iterator[str]) -> Optional[Any]:
+    v = next(it, None)
+    return v
+
+
 def extract_filename(summary):
     summary_data = summary["data"]
-    value_data = next(filter(lambda v: v["name"] == "filename", summary_data))
+    value_data = first_val(extract_named(name="filename", summary=summary_data))
     assert value_data["type"] == "string"
     return value_data["value"]
 
 
 def extract_size(summary):
     summary_data = summary["data"]
-    value_data = next(filter(lambda v: v["name"] == "size", summary_data))
+    value_data = first_val(extract_named(name="size", summary=summary_data))
     assert value_data["type"] == "int64"
     return int(value_data["value"])
 
 
-def parse_samples_meta(filename, state):
+def to_absolute_fn(json_fn, fn):
+    # If not absolute, the path is relative to the associated .json file:
+    if not os.path.isabs(fn):
+        return os.path.join(os.path.dirname(json_fn), fn)
+    return fn
+
+
+def parse_samples_meta(json_filename, state):
     summaries = state["summaries"]
     if not summaries:
-        return None, None
+        return None, None, None
 
-    summary = next(
-        filter(lambda s: s["tag"] == "nv/json/bin:nv/cold/sample_times", summaries),
-        None,
-    )
-    if not summary:
-        return None, None
+    times_summary = optional_first_val(extract_tagged(tag="nv/json/bin:nv/cold/sample_times", summary=summaries))
+    if not times_summary:
+        return None, None, None
 
-    sample_filename = extract_filename(summary)
+    sample_times_filename = to_absolute_fn(json_filename, extract_filename(times_summary))
+    sample_count = extract_size(times_summary)
 
-    # If not absolute, the path is relative to the associated .json file:
-    if not os.path.isabs(sample_filename):
-        sample_filename = os.path.join(os.path.dirname(filename), sample_filename)
+    freqs_summary = optional_first_val(extract_tagged(tag="nv/json/freqs-bin:nv/cold/sample_freqs", summary=summaries))
+    if not freqs_summary:
+        return sample_count, sample_times_filanem, None
 
-    sample_count = extract_size(summary)
-    return sample_count, sample_filename
+    sample_freqs_filename = to_absolute_fn(json_filename, extract_filename(freqs_summary))
+    freqs_count = extract_size(freqs_summary)
+    assert freqs_count == sample_count
+
+    return sample_count, sample_times_filename, sample_freqs_filename
 
 
 def parse_samples(filename, state):
-    sample_count, samples_filename = parse_samples_meta(filename, state)
-    if not sample_count or not samples_filename:
+    sample_count, times_filename, freqs_filename = parse_samples_meta(filename, state)
+    if not sample_count or not times_filename:
         return []
 
-    with open(samples_filename, "rb") as f:
-        samples = np.fromfile(f, "<f4")
+    with open(times_filename, "rb") as f:
+        time_samples = np.fromfile(f, "<f4")
 
-    assert sample_count == len(samples)
-    return samples
+    assert sample_count == len(time_samples)
+    return time_samples
 
 
 def to_df(data):
@@ -100,15 +127,15 @@ def parse_json(filename):
     samples_data = {}
 
     for bench in json_root["benchmarks"]:
-        print("Benchmark: {}".format(bench["name"]))
+        print(f"""Benchmark: {bench["name"]}""")
         for state in bench["states"]:
-            print("State: {}".format(state["name"]))
+            print(f"""State: {state["name"]}""")
 
             samples = parse_samples(filename, state)
             if len(samples) == 0:
                 continue
 
-            samples_data["{} {}".format(bench["name"], state["name"])] = samples
+            samples_data[f"""{bench["name"]} {state["name"]}"""] = samples
 
     return to_df(samples_data)
 
@@ -124,4 +151,7 @@ def main():
 
 
 if __name__ == "__main__":
+    #d = {"benchmarks": [{'name': "Anne", "size": 104}, {"name" : "Jane", "size": 20}]}
+    #print(first_val(extract_tagged(tag="Anne", summary=d["benchmarks"])))
+
     sys.exit(main())
