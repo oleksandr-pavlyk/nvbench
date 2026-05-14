@@ -1,20 +1,14 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include <cuda_runtime_api.h>
-
-#if defined(CUDART_VERSION) && CUDART_VERSION > 12600
-#define NVBENCH_TEST_MEASURE_NOEXCEPT_CONTRACTS 1
-#endif
-
-#if defined(NVBENCH_TEST_MEASURE_NOEXCEPT_CONTRACTS)
 #include <nvbench/blocking_kernel.cuh>
 #include <nvbench/cpu_timer.cuh>
 #include <nvbench/detail/measure_cold.cuh>
-#include <nvbench/detail/measure_hot.cuh>
-#endif
 #include <nvbench/detail/measure_cold_launch_timer_core.cuh>
+#include <nvbench/detail/measure_hot.cuh>
 #include <nvbench/detail/stream_cleanup_guard.cuh>
+
+#include <cuda_runtime_api.h>
 
 #include <fmt/format.h>
 
@@ -22,17 +16,14 @@
 #include <cstddef>
 #include <initializer_list>
 #include <stdexcept>
-#if defined(NVBENCH_TEST_MEASURE_NOEXCEPT_CONTRACTS)
 #include <type_traits>
 #include <utility>
-#endif
 
 #include "test_asserts.cuh"
 
 namespace
 {
 
-#if defined(NVBENCH_TEST_MEASURE_NOEXCEPT_CONTRACTS)
 struct hot_cleanup_probe : nvbench::detail::measure_hot_base
 {
   using nvbench::detail::measure_hot_base::sync_stream_noexcept;
@@ -114,7 +105,11 @@ constexpr void verify_noexcept_contracts()
 
   verify_stream_cleanup_measure_noexcept_contract<hot_cleanup_probe>();
   verify_cold_measure_noexcept_contract<cold_cleanup_probe>();
+#if defined(CUDART_VERSION) && CUDART_VERSION > 12600
+  // CUDA 12.0 through 12.6 can exhaust host memory in cudafe++ while checking
+  // this contract.
   verify_cold_launch_timer_noexcept_contract<cold_launch_timer_probe>();
+#endif
   verify_stream_cleanup_guard_noexcept_contract<
     nvbench::detail::stream_cleanup_guard<hot_cleanup_probe>>();
 
@@ -123,7 +118,6 @@ constexpr void verify_noexcept_contracts()
 }
 
 static_assert((verify_noexcept_contracts(), true), "Noexcept cleanup contracts must hold.");
-#endif
 
 enum class action
 {
