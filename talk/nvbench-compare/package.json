@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "scripts": {
+    "slides:html": "marp slides.md --theme theme.css --html -o slides.html",
+    "slides:pdf": "marp slides.md --theme theme.css --pdf -o slides.pdf",
+    "slides:preview": "marp slides.md --theme theme.css --html --preview"
+  },
+  "devDependencies": {
+    "@marp-team/marp-cli": "latest"
+  }
+}

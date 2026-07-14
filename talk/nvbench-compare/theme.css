@@ -1,0 +1,170 @@
+/* @theme nvbench-nvidia */
+
+@import 'default';
+
+:root {
+  --nv-green: #76b900;
+  --nv-black: #000000;
+  --nv-dark: #1f1f1f;
+  --nv-gray: #6f7175;
+  --nv-light: #f5f6f7;
+  --nv-blue: #1f77b4;
+  --nv-yellow: #d9a400;
+}
+
+section {
+  background: #ffffff;
+  color: #111111;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 28px;
+  letter-spacing: 0;
+  padding: 54px 72px;
+}
+
+section.title {
+  background: var(--nv-black);
+  color: #ffffff;
+}
+
+section.title h1 {
+  color: #ffffff;
+  font-size: 58px;
+  margin-bottom: 0.18em;
+}
+
+section.title h2 {
+  border-bottom: 0;
+  color: var(--nv-green);
+  font-size: 30px;
+  font-weight: 500;
+}
+
+h1 {
+  color: #111111;
+  font-size: 44px;
+  margin-bottom: 0.45em;
+}
+
+h2 {
+  border-bottom: 3px solid var(--nv-green);
+  color: #111111;
+  font-size: 34px;
+  margin-bottom: 0.55em;
+  padding-bottom: 0.16em;
+}
+
+h3 {
+  color: #111111;
+  font-size: 28px;
+}
+
+strong {
+  color: #000000;
+}
+
+a {
+  color: var(--nv-blue);
+}
+
+code {
+  background: #eeeeee;
+  border-radius: 4px;
+  color: #111111;
+  font-size: 0.82em;
+  padding: 0.08em 0.24em;
+}
+
+pre {
+  background: #151515;
+  border-left: 5px solid var(--nv-green);
+  border-radius: 4px;
+  padding: 0.7em 0.9em;
+}
+
+pre code {
+  background: transparent;
+  color: #f2f2f2;
+  font-size: 0.66em;
+  padding: 0;
+}
+
+table {
+  font-size: 0.56em;
+}
+
+.report-table table {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 0.50em;
+}
+
+.light-code pre {
+  background: #f2f3f4;
+  border-left-color: var(--nv-green);
+}
+
+.light-code pre code {
+  color: #111111;
+}
+
+th {
+  background: #f0f1f2;
+  color: #111111;
+}
+
+blockquote {
+  border-left: 6px solid var(--nv-green);
+  color: #333333;
+  margin-left: 0;
+  padding-left: 0.75em;
+}
+
+footer {
+  color: var(--nv-gray);
+  font-size: 16px;
+}
+
+section::after {
+  color: var(--nv-gray);
+  font-size: 16px;
+}
+
+.columns {
+  display: grid;
+  gap: 32px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.formula-grid {
+  align-items: start;
+  display: grid;
+  gap: 28px;
+  grid-template-columns: 1.08fr 0.92fr;
+}
+
+.formula-grid pre {
+  background: #f2f3f4;
+  border-left-color: var(--nv-green);
+  margin: 0;
+}
+
+.formula-grid pre code {
+  color: #111111;
+}
+
+.formula-grid img {
+  width: 100%;
+}
+
+.callout {
+  background: var(--nv-light);
+  border-left: 6px solid var(--nv-green);
+  padding: 0.75em 0.95em;
+}
+
+.small {
+  font-size: 0.78em;
+}
+
+.xsmall {
+  font-size: 0.68em;
+}
