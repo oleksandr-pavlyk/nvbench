@@ -5,6 +5,12 @@ This folder contains a Marp-based slide deck for presenting the
 
 ## Setup
 
+Node.js is needed to render slides from markdown. I used conda environment to install it:
+
+```
+conda install nodejs
+```
+
 Install the slide renderer:
 
 ```bash
