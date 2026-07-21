@@ -1,4 +1,4 @@
-file_version = (1, 0, 0)
+file_version = (1, 1, 0)
 
 file_version_string = "{}.{}.{}".format(
     file_version[0], file_version[1], file_version[2]
@@ -15,9 +15,7 @@ def check_file_version(filename, root_node):
         print("  Reader expects JSON file version {}.".format(file_version_string))
         return
 
-    # TODO We could do something fancy here using semantic versioning, but
-    # for now just warn on mismatch.
-    if version_node["string"] != file_version_string:
+    if not is_compatible_file_version(version_node):
         print("WARNING:")
         print(
             "  {} was written using a different NVBench JSON file version.".format(
@@ -30,3 +28,13 @@ def check_file_version(filename, root_node):
                 version_node["string"], file_version_string
             )
         )
+
+
+def is_compatible_file_version(version_node):
+    file_major = version_node["major"]
+    file_minor = version_node["minor"]
+
+    reader_major = file_version[0]
+    reader_minor = file_version[1]
+
+    return file_major == reader_major and file_minor <= reader_minor

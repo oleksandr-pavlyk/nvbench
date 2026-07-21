@@ -63,6 +63,16 @@ protected:
   }
 };
 
+void test_json_file_version()
+{
+  const auto version = nvbench::json_printer::get_json_file_version();
+
+  ASSERT(version.major == 1);
+  ASSERT(version.minor == 1);
+  ASSERT(version.patch == 0);
+  ASSERT(version.get_string() == "1.1.0");
+}
+
 struct temp_directory
 {
   temp_directory()
@@ -157,6 +167,7 @@ void test_jsonbin_write_failure_omits_file_metadata()
 
 int main()
 {
+  test_json_file_version();
   test_jsonbin_filenames_are_json_relative();
   test_jsonbin_write_failure_omits_file_metadata();
 }

@@ -336,7 +336,7 @@ json_printer::version_t json_printer::get_json_file_version()
   // Major version: backwards incompatible changes
   // Minor version: backwards compatible additions
   // Patch version: backwards compatible bugfixes/patches
-  return {1, 0, 0};
+  return {1, 1, 0};
 }
 
 std::string json_printer::version_t::get_string() const
