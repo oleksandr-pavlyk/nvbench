@@ -885,6 +885,343 @@ def plot_cycle_box(loader: Any, bulk_row: dict[str, Any], *, xscale: str) -> Non
     )
 
 
+def positive_finite_values(values: Any, label: str) -> Any:
+    np = load_numpy()
+    values = np.asarray(values, dtype=np.float64)
+    if len(values) == 0:
+        raise ValueError(f"{label} shift plot requires non-empty data")
+    if np.any(~np.isfinite(values)) or np.any(values <= 0.0):
+        raise ValueError(f"{label} shift plot requires positive finite values")
+    return values
+
+
+def compute_quantile_shift(
+    ref_values: Any, cmp_values: Any, *, num_quantiles: int = 99
+) -> dict[str, Any]:
+    np = load_numpy()
+    ref_values = positive_finite_values(ref_values, "reference")
+    cmp_values = positive_finite_values(cmp_values, "compare")
+    probabilities = np.linspace(0.01, 0.99, num_quantiles)
+    ref_quantiles = np.quantile(ref_values, probabilities)
+    cmp_quantiles = np.quantile(cmp_values, probabilities)
+    additive_shift = cmp_quantiles - ref_quantiles
+    log_shift = np.log(cmp_quantiles) - np.log(ref_quantiles)
+    shift_fraction = np.expm1(log_shift)
+    median_log_shift = float(np.median(log_shift))
+    median_additive_shift = float(np.median(additive_shift))
+    return {
+        "probabilities": probabilities,
+        "ref_quantiles": ref_quantiles,
+        "cmp_quantiles": cmp_quantiles,
+        "additive_shift": additive_shift,
+        "median_additive_shift": median_additive_shift,
+        "additive_shift_p10": float(np.quantile(additive_shift, 0.10)),
+        "additive_shift_p90": float(np.quantile(additive_shift, 0.90)),
+        "log_shift": log_shift,
+        "shift_fraction": shift_fraction,
+        "median_log_shift": median_log_shift,
+        "median_ratio": float(np.exp(median_log_shift)),
+        "median_shift_fraction": float(np.expm1(median_log_shift)),
+        "shift_fraction_p10": float(np.quantile(shift_fraction, 0.10)),
+        "shift_fraction_p90": float(np.quantile(shift_fraction, 0.90)),
+    }
+
+
+def plot_shift_diagnostic(
+    loader: Any,
+    bulk_row: dict[str, Any],
+    ref_values: Any,
+    cmp_values: Any,
+    ref_center: float,
+    cmp_center: float,
+    *,
+    x_label: str,
+    title: str,
+    xscale: str,
+    shift_model: str,
+) -> None:
+    np = load_numpy()
+    plt = load_pyplot()
+    ticker = load_ticker()
+    sns = load_seaborn()
+
+    shift = compute_quantile_shift(ref_values, cmp_values)
+    probabilities = shift["probabilities"]
+    ref_quantiles = shift["ref_quantiles"]
+    cmp_quantiles = shift["cmp_quantiles"]
+
+    if xscale == "log":
+        validate_log_scale(np.concatenate([ref_quantiles, cmp_quantiles]), "x")
+
+    current_palette = sns.color_palette()
+    color_cmp = current_palette[1]
+
+    fig, (ax_qq, ax_shift) = plt.subplots(
+        1,
+        2,
+        figsize=(12, 5.8),
+        gridspec_kw={"width_ratios": [1.05, 1.0], "wspace": 0.28},
+    )
+
+    qq_values = np.concatenate([ref_quantiles, cmp_quantiles])
+    qq_limits = padded_limits(qq_values, xscale)
+    if xscale == "log":
+        line_values = np.geomspace(qq_limits[0], qq_limits[1], 200)
+    else:
+        line_values = np.linspace(qq_limits[0], qq_limits[1], 200)
+    ax_qq.scatter(
+        ref_quantiles,
+        cmp_quantiles,
+        c=probabilities,
+        cmap="viridis",
+        s=22,
+        alpha=0.82,
+        label="matched quantiles",
+    )
+    ax_qq.plot(
+        line_values,
+        line_values,
+        color="0.72",
+        linestyle="--",
+        linewidth=1.2,
+        label="same quantiles",
+    )
+    if shift_model == "multiplicative":
+        median_ratio = shift["median_ratio"]
+        shifted_line_values = median_ratio * line_values
+        shifted_line_label = f"median ratio {median_ratio:.5g}"
+    elif shift_model == "additive":
+        median_shift = shift["median_additive_shift"]
+        shifted_line_values = line_values + median_shift
+        shifted_line_label = f"median offset {median_shift:+.5g} {x_label}"
+    else:
+        raise ValueError(f"unknown shift model {shift_model!r}")
+
+    shifted_line_mask = np.isfinite(shifted_line_values)
+    if xscale == "log":
+        shifted_line_mask &= shifted_line_values > 0.0
+    if np.any(shifted_line_mask):
+        ax_qq.plot(
+            line_values[shifted_line_mask],
+            shifted_line_values[shifted_line_mask],
+            color="0.18",
+            linestyle="-",
+            linewidth=1.5,
+            label=shifted_line_label,
+        )
+    ax_qq.scatter(
+        [ref_center],
+        [cmp_center],
+        color="white",
+        edgecolor="black",
+        linewidth=0.9,
+        marker="D",
+        s=58,
+        zorder=3,
+        label="centers",
+    )
+    ax_qq.set_xscale(xscale)
+    ax_qq.set_yscale(xscale)
+    ax_qq.set_xlim(*qq_limits)
+    ax_qq.set_ylim(*qq_limits)
+    if xscale == "log":
+        use_plain_numeric_ticks(ax_qq.xaxis, qq_values)
+        use_plain_numeric_ticks(ax_qq.yaxis, qq_values)
+    ax_qq.set_xlabel(f"Ref quantile {x_label}")
+    ax_qq.set_ylabel(f"Cmp quantile {x_label}")
+    ax_qq.set_title("Quantile alignment")
+    ax_qq.legend(loc="upper left", fontsize=8)
+
+    if shift_model == "multiplicative":
+        residual_values = (
+            np.expm1(shift["log_shift"] - shift["median_log_shift"]) * 100.0
+        )
+        residual_p10 = float(np.quantile(residual_values, 0.10))
+        residual_p90 = float(np.quantile(residual_values, 0.90))
+        y_label = "residual after median ratio"
+        fit_label = f"cmp ~= ref * {shift['median_ratio']:.6g}"
+        residual_label = (
+            f"10-90% residual: {residual_p10:+.2f}% to {residual_p90:+.2f}%"
+        )
+        summary_text = "\n".join(
+            [
+                fit_label,
+                residual_label,
+                f"max |residual|: {np.max(np.abs(residual_values)):.2f}%",
+            ]
+        )
+        y_formatter = ticker.FuncFormatter(lambda value, _: f"{value:g}%")
+    else:
+        residual_values = shift["additive_shift"] - shift["median_additive_shift"]
+        residual_p10 = float(np.quantile(residual_values, 0.10))
+        residual_p90 = float(np.quantile(residual_values, 0.90))
+        y_label = f"residual {x_label}"
+        fit_label = f"cmp ~= ref + {shift['median_additive_shift']:+.6g} {x_label}"
+        residual_label = (
+            f"10-90% residual: {residual_p10:+.6g} to {residual_p90:+.6g} {x_label}"
+        )
+        summary_text = "\n".join(
+            [
+                fit_label,
+                residual_label,
+                f"max |residual|: {np.max(np.abs(residual_values)):.6g} {x_label}",
+            ]
+        )
+        y_formatter = ticker.FuncFormatter(lambda value, _: f"{value:g}")
+
+    ax_shift.plot(
+        ref_quantiles,
+        residual_values,
+        color=color_cmp,
+        linewidth=1.6,
+        marker=".",
+        markersize=3.5,
+        label="residual",
+    )
+    ax_shift.axhline(
+        0.0,
+        color="0.72",
+        linestyle="--",
+        linewidth=1.0,
+        label="model fits",
+    )
+    ax_shift.fill_between(
+        ref_quantiles,
+        residual_p10,
+        residual_p90,
+        color=color_cmp,
+        alpha=0.10,
+        label="10-90% residual band",
+    )
+    ax_shift.set_xscale(xscale)
+    ax_shift.set_xlim(*padded_limits(ref_quantiles, xscale))
+    if xscale == "log":
+        use_plain_numeric_ticks(ax_shift.xaxis, ref_quantiles)
+    max_abs_residual = float(np.max(np.abs(residual_values)))
+    if max_abs_residual > 0.0:
+        ax_shift.set_ylim(-1.15 * max_abs_residual, 1.15 * max_abs_residual)
+    ax_shift.set_xlabel(f"Ref quantile {x_label}")
+    ax_shift.set_ylabel(y_label)
+    ax_shift.yaxis.set_major_formatter(y_formatter)
+    ax_shift.set_title("Residual after fitted shift")
+    ax_shift.legend(loc="best", fontsize=8)
+    ax_shift.text(
+        0.03,
+        0.03,
+        summary_text,
+        transform=ax_shift.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=9,
+        bbox={"facecolor": "white", "edgecolor": "0.82", "alpha": 0.86, "pad": 4},
+    )
+
+    for ax in [ax_qq, ax_shift]:
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    fig.suptitle(make_title(loader, bulk_row), fontsize=14, fontweight="bold", y=0.98)
+    fig.text(0.5, 0.88, title, ha="center", va="center", fontsize=11)
+    fig.subplots_adjust(left=0.09, right=0.96, bottom=0.13, top=0.76)
+    plt.show()
+
+
+def plot_time_shift(loader: Any, bulk_row: dict[str, Any], *, xscale: str) -> None:
+    np = load_numpy()
+    data = loader.load_bulk_data(bulk_row)
+    ref_times = np.asarray(data["reference_samples"], dtype=np.float64)
+    cmp_times = np.asarray(data["compare_samples"], dtype=np.float64)
+    time_scale, time_unit = duration_scale_and_label(ref_times, cmp_times)
+    plot_shift_diagnostic(
+        loader,
+        bulk_row,
+        ref_times / time_scale,
+        cmp_times / time_scale,
+        bulk_row["reference_time"] / time_scale,
+        bulk_row["compare_time"] / time_scale,
+        x_label=f"[{time_unit}]",
+        title="Timing quantile-shift diagnostic",
+        xscale=xscale,
+        shift_model="multiplicative",
+    )
+
+
+def plot_time_shift_additive(
+    loader: Any, bulk_row: dict[str, Any], *, xscale: str
+) -> None:
+    np = load_numpy()
+    data = loader.load_bulk_data(bulk_row)
+    ref_times = np.asarray(data["reference_samples"], dtype=np.float64)
+    cmp_times = np.asarray(data["compare_samples"], dtype=np.float64)
+    time_scale, time_unit = duration_scale_and_label(ref_times, cmp_times)
+    plot_shift_diagnostic(
+        loader,
+        bulk_row,
+        ref_times / time_scale,
+        cmp_times / time_scale,
+        bulk_row["reference_time"] / time_scale,
+        bulk_row["compare_time"] / time_scale,
+        x_label=f"[{time_unit}]",
+        title="Timing additive-shift diagnostic",
+        xscale=xscale,
+        shift_model="additive",
+    )
+
+
+def plot_cycle_shift(loader: Any, bulk_row: dict[str, Any], *, xscale: str) -> None:
+    np = load_numpy()
+    data = loader.load_bulk_data(bulk_row)
+    cycles_r = compute_cycles(
+        data["reference_samples"], data["reference_frequencies"], "reference"
+    )
+    cycles_c = compute_cycles(
+        data["compare_samples"], data["compare_frequencies"], "compare"
+    )
+    cycle_scale, cycle_label = cycle_scale_and_label(cycles_r, cycles_c)
+    cycles_r_scaled = cycles_r / cycle_scale
+    cycles_c_scaled = cycles_c / cycle_scale
+    plot_shift_diagnostic(
+        loader,
+        bulk_row,
+        cycles_r_scaled,
+        cycles_c_scaled,
+        float(np.median(cycles_r_scaled)),
+        float(np.median(cycles_c_scaled)),
+        x_label=f"[{cycle_label}]",
+        title="Cycle quantile-shift diagnostic",
+        xscale=xscale,
+        shift_model="multiplicative",
+    )
+
+
+def plot_cycle_shift_additive(
+    loader: Any, bulk_row: dict[str, Any], *, xscale: str
+) -> None:
+    np = load_numpy()
+    data = loader.load_bulk_data(bulk_row)
+    cycles_r = compute_cycles(
+        data["reference_samples"], data["reference_frequencies"], "reference"
+    )
+    cycles_c = compute_cycles(
+        data["compare_samples"], data["compare_frequencies"], "compare"
+    )
+    cycle_scale, cycle_label = cycle_scale_and_label(cycles_r, cycles_c)
+    cycles_r_scaled = cycles_r / cycle_scale
+    cycles_c_scaled = cycles_c / cycle_scale
+    plot_shift_diagnostic(
+        loader,
+        bulk_row,
+        cycles_r_scaled,
+        cycles_c_scaled,
+        float(np.median(cycles_r_scaled)),
+        float(np.median(cycles_c_scaled)),
+        x_label=f"[{cycle_label}]",
+        title="Cycle additive-shift diagnostic",
+        xscale=xscale,
+        shift_model="additive",
+    )
+
+
 def plot_coverage_rug(
     loader: Any,
     bulk_row: dict[str, Any],
@@ -1941,6 +2278,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "cycles",
             "time-box",
             "cycle-box",
+            "time-shift",
+            "time-shift-additive",
+            "cycle-shift",
+            "cycle-shift-additive",
             "time-coverage",
             "cycle-coverage",
             "time-coverage-curve",
@@ -2022,6 +2363,14 @@ def main(argv: list[str] | None = None) -> int:
             plot_time_box(loader, bulk_row, xscale=args.xscale)
         elif aspect == "cycle-box":
             plot_cycle_box(loader, bulk_row, xscale=args.xscale)
+        elif aspect == "time-shift":
+            plot_time_shift(loader, bulk_row, xscale=args.xscale)
+        elif aspect == "time-shift-additive":
+            plot_time_shift_additive(loader, bulk_row, xscale=args.xscale)
+        elif aspect == "cycle-shift":
+            plot_cycle_shift(loader, bulk_row, xscale=args.xscale)
+        elif aspect == "cycle-shift-additive":
+            plot_cycle_shift_additive(loader, bulk_row, xscale=args.xscale)
         elif aspect == "time-coverage":
             plot_time_coverage(loader, bulk_row, xscale=args.xscale)
         elif aspect == "cycle-coverage":
